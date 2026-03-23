@@ -1,19 +1,22 @@
-import os
-import nltk
-from nltk.sentiment import SentimentIntensityAnalyzer
+import numpy as np
 
 class MetricsAnalyzer:
     def __init__(self):
-        self.sia = SentimentIntensityAnalyzer()
+        self.metrics_data = []
 
-    def analyze_sentiment(self, feedback):
-        """Analyze the sentiment of user feedback."""
-        scores = self.sia.polarity_scores(feedback)
-        return scores['compound']
+    def add_metrics(self, new_metrics):
+        self.metrics_data.append(new_metrics)
 
-    def analyze_metrics(self, data):
-        """Analyze various metrics from the provided data."""
-        # Existing metric analysis code...
-        sentiment_score = self.analyze_sentiment(data['user_feedback'])
-        data['sentiment_score'] = sentiment_score
-        return data
+    def analyze_metrics(self):
+        metrics_array = np.array(self.metrics_data)
+        mean_metrics = np.mean(metrics_array, axis=0)
+        std_metrics = np.std(metrics_array, axis=0)
+        max_metrics = np.max(metrics_array, axis=0)
+        min_metrics = np.min(metrics_array, axis=0)
+
+        return {
+            'mean': mean_metrics.tolist(),
+            'std_dev': std_metrics.tolist(),
+            'max': max_metrics.tolist(),
+            'min': min_metrics.tolist()
+        }
