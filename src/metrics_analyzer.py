@@ -1,132 +1,126 @@
-import numpy as np
+import git
+import re
+from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
 
 class MetricsAnalyzer:
-    def __init__(self):
-        self.health_weights = {
-            'commit_frequency': 0.25,
-            'issue_resolution_time': 0.2,
-            'contributor_growth': 0.15,
-            'code_churn': 0.2,
-            'pr_velocity': 0.2
+    def __init__(self, repo_path: str):
+        self.repo = git.Repo(repo_path)
+        self.repo_path = repo_path
+
+    def analyze_code_quality(self) -> Dict:
+        """Analyzes code quality metrics across the repository"""
+        files = self._get_all_source_files()
+        metrics = {
+            'complexity': self._calculate_complexity(files),
+            'tech_debt': self._identify_tech_debt(files),
+            'code_smells': self._detect_code_smells(files),
+            'documentation': self._analyze_documentation(files)
+        }
+        return metrics
+
+    def _get_all_source_files(self) -> List[str]:
+        """Returns all Python source files in the repository"""
+        source_files = []
+        for root, _, files in git.os.walk(self.repo_path):
+            for file in files:
+                if file.endswith('.py'):
+                    source_files.append(git.os.path.join(root, file))
+        return source_files
+
+    def _calculate_complexity(self, files: List[str]) -> Dict:
+        """Calculates cyclomatic complexity for each file"""
+        complexity_metrics = {}
+        for file_path in files:
+            with open(file_path, 'r') as f:
+                content = f.read()
+                # Basic complexity calculation based on control structures
+                complexity = (
+                    content.count('if ') +
+                    content.count('for ') +
+                    content.count('while ') +
+                    content.count('except') +
+                    1  # Base complexity
+                )
+                complexity_metrics[file_path] = complexity
+        return complexity_metrics
+
+    def _identify_tech_debt(self, files: List[str]) -> List[Dict]:
+        """Identifies potential technical debt markers"""
+        tech_debt_markers = []
+        debt_patterns = [
+            (r'# TODO:', 'TODO comment'),
+            (r'# FIXME:', 'FIXME comment'),
+            (r'# HACK:', 'Hack implementation'),
+            (r'except\s+Exception:', 'Bare exception handler')
+        ]
+
+        for file_path in files:
+            with open(file_path, 'r') as f:
+                content = f.read()
+                line_number = 1
+                for line in content.split('\n'):
+                    for pattern, debt_type in debt_patterns:
+                        if re.search(pattern, line):
+                            tech_debt_markers.append({
+                                'file': file_path,
+                                'line': line_number,
+                                'type': debt_type,
+                                'content': line.strip()
+                            })
+                    line_number += 1
+        return tech_debt_markers
+
+    def _detect_code_smells(self, files: List[str]) -> List[Dict]:
+        """Detects common code smells"""
+        code_smells = []
+        smell_patterns = [
+            (r'def\s+\w+\s*\([^)]{120,}\):', 'Long parameter list'),
+            (r'class\s+\w+:\s*(?:\s*def\s+\w+)*\s*pass\s*$', 'Empty class'),
+            (r'if\s+[^:]+and\s+[^:]+and\s+[^:]+:', 'Complex condition')
+        ]
+
+        for file_path in files:
+            with open(file_path, 'r') as f:
+                content = f.read()
+                for pattern, smell_type in smell_patterns:
+                    matches = re.finditer(pattern, content)
+                    for match in matches:
+                        code_smells.append({
+                            'file': file_path,
+                            'type': smell_type,
+                            'line': content[:match.start()].count('\n') + 1
+                        })
+        return code_smells
+
+    def _analyze_documentation(self, files: List[str]) -> Dict:
+        """Analyzes documentation coverage and quality"""
+        doc_metrics = {
+            'total_functions': 0,
+            'documented_functions': 0,
+            'documentation_ratio': 0.0,
+            'files_without_docstrings': []
         }
 
-    def calculate_commit_frequency_score(self, commits: List[Dict]) -> float:
-        if not commits:
-            return 0.0
-            
-        now = datetime.now()
-        commit_dates = [datetime.fromisoformat(c['date']) for c in commits]
-        
-        # Calculate commits per week over last 3 months
-        ninety_days_ago = now - timedelta(days=90)
-        recent_commits = [d for d in commit_dates if d > ninety_days_ago]
-        
-        weeks = max(1, (now - ninety_days_ago).days / 7)
-        commits_per_week = len(recent_commits) / weeks
-        
-        # Score from 0-1 based on commits per week
-        return min(1.0, commits_per_week / 10)
-
-    def calculate_issue_resolution_score(self, issues: List[Dict]) -> float:
-        if not issues:
-            return 0.0
-            
-        resolution_times = []
-        for issue in issues:
-            if issue['closed_at']:
-                created = datetime.fromisoformat(issue['created_at'])
-                closed = datetime.fromisoformat(issue['closed_at'])
-                resolution_times.append((closed - created).days)
+        for file_path in files:
+            with open(file_path, 'r') as f:
+                content = f.read()
+                functions = re.finditer(r'def\s+\w+\s*\(', content)
                 
-        if not resolution_times:
-            return 0.0
-            
-        avg_resolution_time = np.mean(resolution_times)
-        # Score inversely proportional to resolution time (faster is better)
-        # Normalize to 0-1 range assuming 30 days is average
-        return min(1.0, 30 / max(1, avg_resolution_time))
-
-    def calculate_contributor_growth(self, contributors: List[Dict]) -> float:
-        if not contributors:
-            return 0.0
-            
-        now = datetime.now()
-        three_months_ago = now - timedelta(days=90)
-        six_months_ago = now - timedelta(days=180)
-        
-        recent_contributors = set()
-        old_contributors = set()
-        
-        for c in contributors:
-            contrib_date = datetime.fromisoformat(c['date'])
-            if contrib_date > three_months_ago:
-                recent_contributors.add(c['author'])
-            elif contrib_date > six_months_ago:
-                old_contributors.add(c['author'])
+                for func in functions:
+                    doc_metrics['total_functions'] += 1
+                    # Check for docstring after function definition
+                    func_pos = func.end()
+                    next_chars = content[func_pos:func_pos+100]
+                    if '"""' in next_chars or "'''" in next_chars:
+                        doc_metrics['documented_functions'] += 1
                 
-        if not old_contributors:
-            return 1.0 if recent_contributors else 0.0
-            
-        growth_rate = len(recent_contributors) / len(old_contributors)
-        return min(1.0, growth_rate)
+                if '"""' not in content and "'''" not in content:
+                    doc_metrics['files_without_docstrings'].append(file_path)
 
-    def calculate_code_churn_score(self, commits: List[Dict]) -> float:
-        if not commits:
-            return 0.0
-            
-        total_changes = sum(c['additions'] + c['deletions'] for c in commits)
-        avg_changes_per_commit = total_changes / len(commits)
-        
-        # Score inversely proportional to average changes
-        # Normalize to 0-1 range assuming 200 lines is optimal
-        return min(1.0, 200 / max(1, avg_changes_per_commit))
+        if doc_metrics['total_functions'] > 0:
+            doc_metrics['documentation_ratio'] = (
+                doc_metrics['documented_functions'] / doc_metrics['total_functions']
+            )
 
-    def calculate_pr_velocity_score(self, pull_requests: List[Dict]) -> float:
-        if not pull_requests:
-            return 0.0
-            
-        now = datetime.now()
-        ninety_days_ago = now - timedelta(days=90)
-        
-        recent_prs = [pr for pr in pull_requests 
-                     if datetime.fromisoformat(pr['created_at']) > ninety_days_ago]
-        
-        if not recent_prs:
-            return 0.0
-            
-        merged_prs = [pr for pr in recent_prs if pr['merged_at']]
-        merge_ratio = len(merged_prs) / len(recent_prs)
-        
-        # Calculate average time to merge
-        merge_times = []
-        for pr in merged_prs:
-            created = datetime.fromisoformat(pr['created_at'])
-            merged = datetime.fromisoformat(pr['merged_at'])
-            merge_times.append((merged - created).days)
-            
-        avg_merge_time = np.mean(merge_times) if merge_times else 0
-        merge_time_score = min(1.0, 7 / max(1, avg_merge_time))
-        
-        return (merge_ratio * 0.5 + merge_time_score * 0.5)
-
-    def calculate_repository_health(self,
-                                 commits: List[Dict],
-                                 issues: List[Dict],
-                                 contributors: List[Dict],
-                                 pull_requests: List[Dict]) -> Dict[str, float]:
-        scores = {
-            'commit_frequency': self.calculate_commit_frequency_score(commits),
-            'issue_resolution_time': self.calculate_issue_resolution_score(issues),
-            'contributor_growth': self.calculate_contributor_growth(contributors),
-            'code_churn': self.calculate_code_churn_score(commits),
-            'pr_velocity': self.calculate_pr_velocity_score(pull_requests)
-        }
-        
-        # Calculate weighted total health score
-        total_score = sum(scores[metric] * self.health_weights[metric] 
-                         for metric in scores)
-        
-        scores['overall_health'] = total_score
-        return scores
+        return doc_metrics
